@@ -7,16 +7,29 @@ do valor ao longo do tempo, ranking por grupo, grade completa com filtro
 e busca livre, e detalhe de cada bem. A ideia é tornar a consulta e a
 identificação do patrimônio mais rápida e visual.
 
-Funciona em **qualquer cliente Sankhya com banco Oracle** — a consulta usa
-só tabelas padrão do módulo de Imobilizado (`TCIBEM`, `TGFPRO`, `TGFGRU`,
-`TSIEMP`), sem nada específico de uma empresa. Também não depende de CDN
-nem de fonte instalada: CSS, fonte e ícones ficam todos embutidos no
-próprio arquivo, então o visual não quebra em ambientes Sankhya sem saída
-pra internet ou com acesso a domínios externos bloqueado (comum em
-instalações on-premise).
+Funciona em **qualquer cliente Sankhya com banco Oracle ou MySQL** — a
+consulta usa só tabelas padrão do módulo de Imobilizado (`TCIBEM`,
+`TGFPRO`, `TGFGRU`, `TSIEMP`), sem nada específico de uma empresa. Também
+não depende de CDN nem de fonte instalada: CSS, fonte e ícones ficam todos
+embutidos no próprio arquivo, então o visual não quebra em ambientes
+Sankhya sem saída pra internet ou com acesso a domínios externos bloqueado
+(comum em instalações on-premise).
 
-**Não tem SQL Server** — só Oracle. Se seu Sankhya rodar em SQL Server,
-esse projeto não serve como está.
+**Não tem SQL Server** — só Oracle e MySQL. Se seu Sankhya rodar em SQL
+Server, esse projeto não serve como está.
+
+## Qual versão baixar
+
+O projeto existe em duas versões, com a consulta escrita na sintaxe SQL de
+cada banco (o resto — tela, filtros, exportação — é idêntico):
+
+| Versão | Pasta no repositório | Banco |
+|---|---|---|
+| Oracle | raiz do repositório (`patrimonio.jsp`, `dados_patrimonio.jsp`) | Oracle |
+| MySQL | [`mysql/`](mysql/) (`mysql/patrimonio.jsp`, `mysql/dados_patrimonio.jsp`) | MySQL |
+
+Baixe o `.zip` da versão certa pro banco do seu Sankhya na aba
+[Releases](../../releases).
 
 ## Veja funcionando antes de instalar
 
@@ -30,17 +43,19 @@ demonstração.
 
 | Arquivo | Papel |
 |---|---|
-| `patrimonio.jsp` | dashboard (entryPoint do componente HTML5) — CSS **embutido** em `<style>` no `<head>` |
-| `dados_patrimonio.jsp` | consulta pesada (`<snk:query>`), buscada via XHR depois que a casca já carregou |
+| `patrimonio.jsp` | dashboard Oracle (entryPoint do componente HTML5) — CSS **embutido** em `<style>` no `<head>` |
+| `dados_patrimonio.jsp` | consulta pesada Oracle (`<snk:query>`), buscada via XHR depois que a casca já carregou |
 | `index.html` | redireciona para `patrimonio.jsp` |
 | `css/patrimonioCSS.css` | cópia do CSS só pra facilitar leitura/edição (o que vale de verdade é o `<style>` embutido no `patrimonio.jsp`) |
-| `demo.html` | prévia estática com dados fictícios, roda em qualquer navegador |
-| `dashboard-patrimonio-sankhya.zip` | pacote pronto — baixe direto na aba [Releases](../../releases) deste repositório |
+| `mysql/` | mesma tela e mesmo `index.html`, com a consulta em sintaxe MySQL — ver [Qual versão baixar](#qual-versão-baixar) |
+| `demo.html` | prévia estática com dados fictícios, roda em qualquer navegador (serve pras duas versões) |
+| `dashboard-patrimonio-sankhya.zip` | pacote pronto **Oracle** — baixe na aba [Releases](../../releases) |
+| `dashboard-patrimonio-sankhya-mysql.zip` | pacote pronto **MySQL** — baixe na aba [Releases](../../releases) |
 
 ### Passo a passo
 
-1. Baixe `dashboard-patrimonio-sankhya.zip` na aba
-   [Releases](../../releases) deste repositório.
+1. Baixe o `.zip` da versão certa pro banco do seu Sankhya (Oracle ou
+   MySQL) na aba [Releases](../../releases) deste repositório.
 2. No Sankhya, abra o
    [Construtor de Componentes de BI](https://ajuda.sankhya.com.br/hc/pt-br/articles/360044605354-Construtor-de-Componentes-de-BI),
    crie um componente do tipo **HTML5** e suba o zip baixado no passo 1.
@@ -56,7 +71,8 @@ O zip precisa ter uma **pasta raiz única com entradas de diretório reais**
 (ex.: `patrimonio/`) — um zip "achatado" (arquivos direto na raiz) não
 carrega no Construtor de Componentes de BI. Monte uma pasta `patrimonio/`
 contendo `patrimonio.jsp` (com o CSS já embutido), `dados_patrimonio.jsp`
-e `index.html`.
+e `index.html` — da raiz do repositório pra versão Oracle, ou de
+[`mysql/`](mysql/) pra versão MySQL.
 
 * **Linux/macOS:** rode `zip -r dashboard-patrimonio-sankhya.zip patrimonio`
   **a partir de dentro** da pasta que contém `patrimonio/` (não liste os
@@ -103,9 +119,9 @@ primária) e `--pat-s2` (cor secundária) ficam no topo do CSS, dentro de
 
 ## Como a consulta funciona
 
-Consulta real, gerada em `dados_patrimonio.jsp` (roda direto em qualquer
-cliente Oracle — as duas linhas de `CODEMP`/`CODPROD` só entram quando o
-drill-down chega preenchido; sem elas é só tirar as duas linhas):
+Consulta real, gerada em `dados_patrimonio.jsp` (as duas linhas de
+`CODEMP`/`CODPROD` só entram quando o drill-down chega preenchido; sem
+elas é só tirar as duas linhas). Versão **Oracle** (raiz do repositório):
 
 ```sql
 SELECT * FROM (
@@ -137,6 +153,39 @@ SELECT * FROM (
 ) WHERE ROWNUM <= 20000
 ```
 
+Versão **MySQL** ([`mysql/`](mysql/)) — mesmas colunas e o mesmo filtro,
+só troca a sintaxe: `TO_CHAR` vira `CAST(... AS CHAR)`/`DATE_FORMAT`,
+`NVL` vira `IFNULL`, `||` vira `CONCAT`, e o corte de linhas usa `LIMIT`
+em vez do truque `ROWNUM` (que não existe no MySQL):
+
+```sql
+SELECT
+  BEM.*,
+  DATE_FORMAT(BEM.DTCOMPRA, '%Y-%m-%d')                    AS X_DTCOMPRA,
+  DATE_FORMAT(BEM.DTBAIXA, '%Y-%m-%d')                     AS X_DTBAIXA,
+  CAST(IFNULL(BEM.VLRAQUISICAO, 0) AS DECIMAL(18,2))       AS X_VLRAQUIS,
+  CAST(BEM.CODBEM AS CHAR)                                 AS X_CODBEM,
+  CAST(BEM.CODPROD AS CHAR)                                AS X_CODPROD,
+  CAST(BEM.CODEMP AS CHAR)                                 AS X_CODEMP,
+  BEM.DESCRBEM                                             AS X_DESCRBEM,
+  PRO.DESCRPROD                                            AS X_DESCRPROD,
+  PRO.REFERENCIA                                           AS X_REFERENCIA,
+  PRO.MARCA                                                AS X_MARCA,
+  CAST(PRO.CODGRUPOPROD AS CHAR)                           AS X_CODGRUPO,
+  IFNULL(GRU.DESCRGRUPOPROD, 'Sem grupo')                  AS X_GRUPO,
+  IFNULL(EMP.NOMEFANTASIA, CONCAT('Empresa ', BEM.CODEMP)) AS X_EMPRESA
+  FROM TCIBEM BEM
+  LEFT JOIN TGFPRO PRO ON PRO.CODPROD      = BEM.CODPROD
+  LEFT JOIN TGFGRU GRU ON GRU.CODGRUPOPROD = PRO.CODGRUPOPROD
+  LEFT JOIN TSIEMP EMP ON EMP.CODEMP       = BEM.CODEMP
+ WHERE BEM.CODBEM IS NOT NULL
+   AND TRIM(CAST(BEM.CODBEM AS CHAR)) IS NOT NULL
+   AND UPPER(TRIM(CAST(BEM.CODBEM AS CHAR))) <> '<TODOS>'
+   AND BEM.CODEMP = 1    -- só entra se o drill-down vier com empresa
+   AND BEM.CODPROD = 293 -- só entra se o drill-down vier com produto
+ ORDER BY BEM.CODBEM LIMIT 20000
+```
+
 * `BEM.*` traz **todas** as colunas da TCIBEM, inclusive campos
   customizados (`AD_CHASSI`, `AD_PLACA`, `AD_NUMSERIE`...). A tela lê as
   colunas dinamicamente — nada precisa ser cadastrado para um campo novo
@@ -144,8 +193,8 @@ SELECT * FROM (
 * Os apelidos `X_*` alimentam os indicadores e a busca livre.
 * Filtro, ordenação, seleção de colunas e exportação rodam no navegador,
   sobre a base já carregada — sem ida ao servidor a cada clique.
-* `ROWNUM <= 20000` é uma proteção, não uma exigência do negócio — evita
-  que uma base muito grande sobrecarregue o navegador. Ajuste (ou remova)
+* O corte de 20000 linhas (`ROWNUM`/`LIMIT`, conforme o banco) é uma
+  proteção, não uma exigência do negócio — evita
   mudando a constante `LIMITE` no topo de `patrimonio.jsp`/
   `dados_patrimonio.jsp`.
 
